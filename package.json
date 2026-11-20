@@ -1,0 +1,19 @@
+{
+  "name": "elvan-cell",
+  "version": "1.0.0",
+  "description": "Sistem pencatatan transaksi dan kas harian Elvan Cell",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "ISC",
+  "engines": {
+    "node": ">=18 <23"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "express": "^4.22.3",
+    "html2canvas": "^1.4.1",
+    "xlsx": "^0.18.5"
+  }
+}
