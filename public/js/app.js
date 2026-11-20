@@ -12,17 +12,55 @@ const fmtDT = (s) => s ? s.replace('T', ' ') : '';
 
 const state = { user: null, date: todayStr(), counter: 'Elvan Cell', opening: { cash: 0, digital: 0 }, tx: [], accounts: [], mutations: [] };
 
-// ---------- API ----------
-async function api(url, opts = {}) {
-  const res = await fetch(url, {
-    method: opts.method || 'GET',
-    headers: opts.body ? { 'Content-Type': 'application/json' } : {},
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  if (res.status === 401) { location.replace('login.html'); throw new Error('Belum login'); }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Terjadi kesalahan');
-  return data;
+// ---------- DATA (Supabase) ----------
+// Jalankan query Supabase; lempar error dengan pesan yang mudah dipahami
+async function q(promise) {
+  const { data, error, count } = await promise;
+  if (error) {
+    if (error.status === 401 || /JWT/i.test(error.message)) { location.replace('index.html'); throw new Error('Belum login'); }
+    throw new Error(supaError(error));
+  }
+  return count != null && data == null ? count : data;
+}
+const n0 = (v) => Math.max(0, Math.round(Number(v) || 0));
+const TX_TYPES = ['Top up e-wallet', 'Tarik tunai', 'Transfer bank', 'Transfer e-wallet', 'Pulsa', 'Paket data',
+  'Token listrik', 'Bayar tagihan', 'Voucher game', 'Aksesori HP', 'Jasa / lainnya'];
+
+const DB = {
+  async opening(date) {
+    const rows = await q(supa.from('daily_opening').select('*').eq('date', date));
+    return rows[0] || { date, cash: 0, digital: 0 };
+  },
+  saveOpening: (date, cash, digital) =>
+    q(supa.from('daily_opening').upsert({ date, cash: n0(cash), digital: n0(digital), updated_by: state.user.username })),
+  transactions: (date) =>
+    q(supa.from('transactions').select('*').gte('datetime', date).lt('datetime', date + 'U')
+      .order('datetime', { ascending: false }).order('id', { ascending: false })),
+  accounts: () => q(supa.from('account_balances').select('*').order('id')),
+  async mutations() {
+    const rows = await q(supa.from('mutations').select('*, acc:account_id(name), to:to_account_id(name)')
+      .order('datetime', { ascending: false }).order('id', { ascending: false }).limit(500));
+    return rows.map((m) => ({ ...m, account_name: m.acc?.name, to_account_name: m.to?.name }));
+  },
+  async settings() {
+    const rows = await q(supa.from('settings').select('key, value'));
+    return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  },
+  saveCounter: (name) => q(supa.from('settings').upsert({ key: 'counter_name', value: name })),
+};
+
+async function getProfile() {
+  const { data } = await supa.auth.getSession();
+  if (!data.session) { location.replace('index.html'); throw new Error('Belum login'); }
+  const rows = await q(supa.from('profiles').select('*').eq('id', data.session.user.id));
+  const p = rows[0];
+  if (!p || p.role === 'none') {
+    await supa.auth.signOut();
+    alert('Akun ini belum diaktifkan oleh admin.');
+    location.replace('index.html');
+    throw new Error('Belum login');
+  }
+  return p;
 }
 
 function toast(msg, isError = false) {
@@ -40,10 +78,7 @@ const wrap = (fn) => async (e) => {
 // ---------- LOAD ----------
 async function loadAll() {
   const [opening, tx, accounts, mutations] = await Promise.all([
-    api('/api/opening/' + state.date),
-    api('/api/transactions?date=' + state.date),
-    api('/api/accounts'),
-    api('/api/mutations'),
+    DB.opening(state.date), DB.transactions(state.date), DB.accounts(), DB.mutations(),
   ]);
   Object.assign(state, { opening, tx, accounts, mutations });
   render();
@@ -137,17 +172,19 @@ $('btnToday').addEventListener('click', wrap(async () => {
 }));
 $('btnSaveCounter').addEventListener('click', wrap(async () => {
   state.counter = $('counterName').value.trim() || 'Elvan Cell';
-  await api('/api/settings', { method: 'PUT', body: { counter_name: state.counter } });
+  await DB.saveCounter(state.counter);
   render(); toast('Nama counter disimpan');
 }));
 
 $('openingForm').addEventListener('submit', wrap(async () => {
-  await api('/api/opening/' + state.date, { method: 'PUT', body: { cash: $('openCash').value, digital: $('openDigital').value } });
+  await DB.saveOpening(state.date, $('openCash').value, $('openDigital').value);
   await loadAll(); toast('Saldo awal disimpan');
 }));
 
 $('accForm').addEventListener('submit', wrap(async () => {
-  await api('/api/accounts', { method: 'POST', body: { name: $('accName').value, initial_balance: $('accInitial').value } });
+  const name = $('accName').value.trim().slice(0, 100);
+  if (!name) throw new Error('Nama rekening wajib diisi');
+  await q(supa.from('accounts').insert({ name, initial_balance: n0($('accInitial').value) }));
   $('accForm').reset(); $('accInitial').value = 0;
   await loadAll(); toast('Rekening ditambahkan');
 }));
@@ -158,10 +195,15 @@ $('mutType').addEventListener('change', () => {
   $('mutAccountLabel').textContent = t ? 'Rekening asal' : 'Rekening';
 });
 $('mutForm').addEventListener('submit', wrap(async () => {
-  await api('/api/mutations', { method: 'POST', body: {
-    type: $('mutType').value, account_id: $('mutAccount').value, to_account_id: $('mutTo').value,
-    amount: $('mutAmount').value, note: $('mutNote').value, datetime: `${todayStr()}T${nowTime()}`,
-  } });
+  const type = $('mutType').value, acc = Number($('mutAccount').value), to = Number($('mutTo').value), amount = n0($('mutAmount').value);
+  if (!acc) throw new Error('Pilih rekening');
+  if (type === 'transfer' && !to) throw new Error('Pilih rekening tujuan');
+  if (type === 'transfer' && to === acc) throw new Error('Rekening asal dan tujuan tidak boleh sama');
+  if (amount <= 0) throw new Error('Nominal wajib diisi');
+  await q(supa.from('mutations').insert({
+    type, account_id: acc, to_account_id: type === 'transfer' ? to : null, amount,
+    note: $('mutNote').value.trim().slice(0, 200), datetime: `${todayStr()}T${nowTime()}`, created_by: state.user.username,
+  }));
   $('mutAmount').value = ''; $('mutNote').value = '';
   await loadAll(); toast('Mutasi disimpan');
 }));
@@ -178,11 +220,16 @@ $('btnAutoFill').addEventListener('click', () => {
 });
 
 $('txForm').addEventListener('submit', wrap(async () => {
-  await api('/api/transactions', { method: 'POST', body: {
-    datetime: $('txDatetime').value, type: $('txType').value, nominal: $('txNominal').value, admin_fee: $('txAdmin').value,
-    cash_in: $('txCashIn').value, cash_out: $('txCashOut').value, digital_in: $('txDigIn').value, digital_out: $('txDigOut').value,
-    method: $('txMethod').value, note: $('txNote').value,
-  } });
+  const datetime = $('txDatetime').value.slice(0, 16);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(datetime)) throw new Error('Tanggal & waktu tidak valid');
+  if (n0($('txNominal').value) <= 0) throw new Error('Nominal transaksi wajib diisi');
+  await q(supa.from('transactions').insert({
+    datetime, type: TX_TYPES.includes($('txType').value) ? $('txType').value : 'Jasa / lainnya',
+    nominal: n0($('txNominal').value), admin_fee: n0($('txAdmin').value),
+    cash_in: n0($('txCashIn').value), cash_out: n0($('txCashOut').value),
+    digital_in: n0($('txDigIn').value), digital_out: n0($('txDigOut').value),
+    method: $('txMethod').value, note: $('txNote').value.trim().slice(0, 200), created_by: state.user.username,
+  }));
   ['txNominal', 'txNote'].forEach((id) => ($(id).value = ''));
   ['txAdmin', 'txCashIn', 'txCashOut', 'txDigIn', 'txDigOut'].forEach((id) => ($(id).value = 0));
   const d = $('txDatetime').value.slice(0, 10);
@@ -195,20 +242,18 @@ document.addEventListener('click', wrap(async (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.delTx && confirm('Hapus transaksi ini?')) {
-    await api('/api/transactions/' + b.dataset.delTx, { method: 'DELETE' }); await loadAll(); toast('Transaksi dihapus');
+    await q(supa.from('transactions').delete().eq('id', b.dataset.delTx)); await loadAll(); toast('Transaksi dihapus');
   } else if (b.dataset.delMut && confirm('Hapus mutasi ini?')) {
-    await api('/api/mutations/' + b.dataset.delMut, { method: 'DELETE' }); await loadAll(); toast('Mutasi dihapus');
+    await q(supa.from('mutations').delete().eq('id', b.dataset.delMut)); await loadAll(); toast('Mutasi dihapus');
   } else if (b.dataset.delAcc && confirm('Hapus rekening ini beserta semua mutasinya?')) {
-    await api('/api/accounts/' + b.dataset.delAcc, { method: 'DELETE' }); await loadAll(); toast('Rekening dihapus');
-  } else if (b.dataset.delUser && confirm('Hapus pengguna ini?')) {
-    await api('/api/users/' + b.dataset.delUser, { method: 'DELETE' }); await loadUsers(); toast('Pengguna dihapus');
+    await q(supa.from('accounts').delete().eq('id', b.dataset.delAcc)); await loadAll(); toast('Rekening dihapus');
   }
 }));
 
 $('btnClearDay').addEventListener('click', wrap(async () => {
   if (!confirm(`Hapus SEMUA transaksi tanggal ${fmtDate(state.date)}? Tindakan ini tidak bisa dibatalkan.`)) return;
-  const r = await api('/api/transactions?date=' + state.date, { method: 'DELETE' });
-  await loadAll(); toast(r.deleted + ' transaksi dihapus');
+  const deleted = await q(supa.rpc('clear_day', { p_date: state.date }));
+  await loadAll(); toast(deleted + ' transaksi dihapus');
 }));
 
 // Dropdown
@@ -229,27 +274,57 @@ document.querySelectorAll('.modal').forEach((m) => {
 });
 
 // Users
+const ROLE_LABEL = { admin: 'Admin', kasir: 'Kasir', none: 'Nonaktif' };
 async function loadUsers() {
-  const users = await api('/api/users');
+  const users = await q(supa.from('profiles').select('*').order('created_at'));
   $('userBody').innerHTML = users.map((u) => `
-    <tr><td>${esc(u.username)}</td><td>${esc(u.full_name)}</td><td>${u.role}</td>
-    <td>${u.id === state.user.id ? '<span class="pill">Anda</span>' : `<button class="btn btn-danger btn-sm" data-del-user="${u.id}">Hapus</button>`}</td></tr>`).join('');
+    <tr><td>${esc(u.username)}</td><td>${esc(u.full_name)}</td><td>${ROLE_LABEL[u.role] || u.role}</td>
+    <td>${u.id === state.user.id ? '<span class="pill">Anda</span>' : `
+      <select class="input" data-role-user="${u.id}" style="min-height:32px;padding:4px 8px">
+        ${Object.entries(ROLE_LABEL).map(([k, v]) => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${v}</option>`).join('')}
+      </select>`}</td></tr>`).join('');
 }
+$('userBody').addEventListener('change', wrap(async (e) => {
+  const sel = e.target.closest('[data-role-user]');
+  if (!sel) return;
+  await q(supa.from('profiles').update({ role: sel.value }).eq('id', sel.dataset.roleUser));
+  toast('Peran diubah menjadi ' + ROLE_LABEL[sel.value]);
+}));
 $('btnUsers').addEventListener('click', wrap(async () => { await loadUsers(); openModal('modalUsers'); }));
 $('userForm').addEventListener('submit', wrap(async () => {
-  await api('/api/users', { method: 'POST', body: { username: $('nuUsername').value, full_name: $('nuName').value, password: $('nuPassword').value, role: $('nuRole').value } });
+  const username = $('nuUsername').value.trim().toLowerCase();
+  const password = $('nuPassword').value;
+  if (!/^[a-z0-9_.]{3,50}$/.test(username)) throw new Error('Username 3-50 karakter (huruf kecil, angka, titik, garis bawah)');
+  if (password.length < 6) throw new Error('Password minimal 6 karakter');
+  // Pakai klien terpisah agar sesi admin tidak tergantikan oleh akun baru
+  const temp = supabase.createClient(ELVAN_CONFIG.SUPABASE_URL, ELVAN_CONFIG.SUPABASE_ANON_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false, storageKey: 'elvan-temp' } });
+  const { data, error } = await temp.auth.signUp({
+    email: usernameToEmail(username), password,
+    options: { data: { username, full_name: $('nuName').value.trim() || username } },
+  });
+  if (error) throw new Error(supaError(error));
+  if (!data.user || !data.session) {
+    throw new Error('Akun dibuat, tapi perlu konfirmasi email. Matikan "Confirm email" di Supabase (Authentication → Sign In / Providers → Email).');
+  }
+  await temp.auth.signOut();
+  await q(supa.from('profiles').update({ role: $('nuRole').value }).eq('id', data.user.id));
   $('userForm').reset(); await loadUsers(); toast('Pengguna ditambahkan');
 }));
 
 // Password
 $('btnPassword').addEventListener('click', () => openModal('modalPassword'));
 $('passForm').addEventListener('submit', wrap(async () => {
-  await api('/api/change-password', { method: 'POST', body: { old_password: $('oldPass').value, new_password: $('newPass').value } });
+  const { error: e1 } = await supa.auth.signInWithPassword({ email: usernameToEmail(state.user.username), password: $('oldPass').value });
+  if (e1) throw new Error('Password lama salah');
+  if ($('newPass').value.length < 6) throw new Error('Password baru minimal 6 karakter');
+  const { error } = await supa.auth.updateUser({ password: $('newPass').value });
+  if (error) throw new Error(supaError(error));
   $('passForm').reset(); $('modalPassword').classList.remove('open'); toast('Password berhasil diganti');
 }));
 
 // Logout
-$('btnLogout').addEventListener('click', wrap(async () => { await api('/api/logout', { method: 'POST' }); location.replace('login.html'); }));
+$('btnLogout').addEventListener('click', wrap(async () => { await supa.auth.signOut(); location.replace('index.html'); }));
 
 // Backup & import
 function downloadBlob(blob, filename) {
@@ -259,7 +334,15 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 $('btnBackup').addEventListener('click', wrap(async () => {
-  const data = await api('/api/backup');
+  const data = { app: 'elvan-cell', exported_at: new Date().toISOString() };
+  for (const t of ['settings', 'daily_opening', 'accounts', 'mutations', 'transactions']) {
+    data[t] = [];
+    for (let from = 0; ; from += 1000) {
+      const rows = await q(supa.from(t).select('*').range(from, from + 999));
+      data[t].push(...rows);
+      if (rows.length < 1000) break;
+    }
+  }
   downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), `backup-elvan-cell-${todayStr()}.json`);
   toast('Backup diunduh');
 }));
@@ -269,7 +352,8 @@ $('importFile').addEventListener('change', wrap(async () => {
   if (!f) return;
   if (!confirm('Import akan MENGGANTI semua data (transaksi, rekening, mutasi) dengan isi file backup. Lanjutkan?')) return;
   const data = JSON.parse(await f.text());
-  await api('/api/restore', { method: 'POST', body: data });
+  if (!data || data.app !== 'elvan-cell') throw new Error('File backup tidak valid');
+  await q(supa.rpc('restore_backup', { data }));
   await loadAll(); toast('Data berhasil dipulihkan');
 }));
 
@@ -380,12 +464,11 @@ $('btnPrint').addEventListener('click', () => window.print());
 // ---------- INIT ----------
 (async function init() {
   try {
-    const me = await api('/api/me');
-    state.user = me.user;
-    $('userName').textContent = me.user.full_name || me.user.username;
-    $('userRole').textContent = me.user.role;
+    state.user = await getProfile();
+    $('userName').textContent = state.user.full_name || state.user.username;
+    $('userRole').textContent = ROLE_LABEL[state.user.role] || state.user.role;
     if (!isAdmin()) document.querySelectorAll('.admin-only').forEach((el) => (el.style.display = 'none'));
-    const settings = await api('/api/settings');
+    const settings = await DB.settings();
     state.counter = settings.counter_name || 'Elvan Cell';
     $('counterName').value = state.counter;
     $('date').value = state.date;

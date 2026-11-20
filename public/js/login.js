@@ -1,5 +1,5 @@
 // Jika sudah login, langsung ke aplikasi
-fetch('/api/me').then((r) => { if (r.ok) location.replace('app.html'); });
+supa.auth.getSession().then(({ data }) => { if (data.session) location.replace('app.html'); });
 
 const form = document.getElementById('loginForm');
 const errBox = document.getElementById('loginError');
@@ -18,16 +18,14 @@ form.addEventListener('submit', async (e) => {
   btn.disabled = true;
   btn.textContent = 'Memproses...';
   try {
-    const res = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: form.username.value, password: pass.value }),
+    const { error } = await supa.auth.signInWithPassword({
+      email: usernameToEmail(form.username.value),
+      password: pass.value,
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Login gagal');
+    if (error) throw error;
     location.replace('app.html');
   } catch (err) {
-    errBox.textContent = err.message === 'Failed to fetch' ? 'Tidak bisa terhubung ke server' : err.message;
+    errBox.textContent = supaError(err);
     errBox.style.display = 'block';
   } finally {
     btn.disabled = false;
