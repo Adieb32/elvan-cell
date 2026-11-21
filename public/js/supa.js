@@ -3,7 +3,7 @@
 // =============================================
 (function () {
   const cfg = window.ELVAN_CONFIG;
-  window.APP_VERSION = '2.3';
+  window.APP_VERSION = '2.4';
 
   // Batasi waktu tunggu setiap permintaan agar tidak macet tanpa kabar
   const fetchWithTimeout = (url, opts = {}) => {

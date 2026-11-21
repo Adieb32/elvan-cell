@@ -42,7 +42,7 @@ document.addEventListener('input', (e) => {
 
 // Saldo awal: jangan ditimpa auto-refresh selama sedang diubah & belum disimpan
 let openingDirty = false;
-['openCash', 'openDigital'].forEach((id) => $(id).addEventListener('input', () => { openingDirty = true; }));
+['openCash', 'openDigital'].forEach((id) => $(id).addEventListener('input', () => { openingDirty = true; updateEstimates(); }));
 const TX_TYPES = ['Top up e-wallet', 'Tarik tunai', 'Transfer bank', 'Transfer e-wallet', 'Pulsa', 'Paket data',
   'Token listrik', 'Bayar tagihan', 'Voucher game', 'Aksesori HP', 'Jasa / lainnya'];
 
@@ -127,6 +127,15 @@ function summary() {
   return s;
 }
 
+// Perkiraan akhir langsung mengikuti angka yang sedang diketik (sebelum disimpan)
+function updateEstimates(s = summary()) {
+  const cash = openingDirty ? n0($('openCash').value) : state.opening.cash;
+  const digital = openingDirty ? n0($('openDigital').value) : state.opening.digital;
+  $('estCash').textContent = rp(cash + s.cashDiff);
+  $('estDigital').textContent = rp(digital + s.digIn - s.digOut);
+  $('openingStatus').textContent = openingDirty ? '● Belum disimpan' : '';
+}
+
 function render() {
   const s = summary();
   $('brandName').textContent = state.counter.toUpperCase();
@@ -136,8 +145,7 @@ function render() {
   $('stCashDiff').textContent = (s.cashDiff < 0 ? '-' : '') + rp(Math.abs(s.cashDiff));
   $('stCashDiff').className = s.cashDiff < 0 ? 'text-red' : 'text-green';
   if (!openingDirty) { setMoney('openCash', state.opening.cash); setMoney('openDigital', state.opening.digital); }
-  $('estCash').textContent = rp(s.estCash);
-  $('estDigital').textContent = rp(s.estDigital);
+  updateEstimates(s);
   $('txDateLabel').textContent = fmtDate(state.date);
 
   // Transaksi
