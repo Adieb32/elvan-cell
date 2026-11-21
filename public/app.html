@@ -76,16 +76,16 @@
   <section class="card">
     <div class="card-head">
       <h2>Saldo awal hari</h2>
-      <span class="pill">Isi sebelum mulai transaksi</span>
+      <span class="pill">Berlaku untuk tanggal rekap yang dipilih</span>
     </div>
     <form id="openingForm" class="grid grid-3">
       <div class="field">
         <label for="openCash">Kas tunai awal (Rp)</label>
-        <input class="input" id="openCash" type="number" min="0" inputmode="numeric" value="0" />
+        <input class="input" id="openCash" type="text" inputmode="numeric" autocomplete="off" data-money value="0" />
       </div>
       <div class="field">
         <label for="openDigital">Saldo digital awal (Rp)</label>
-        <input class="input" id="openDigital" type="number" min="0" inputmode="numeric" value="0" />
+        <input class="input" id="openDigital" type="text" inputmode="numeric" autocomplete="off" data-money value="0" />
       </div>
       <div class="form-actions span-all-md">
         <button class="btn btn-soft btn-block" type="submit">Simpan saldo awal</button>
@@ -123,7 +123,7 @@
       </div>
       <div class="field">
         <label for="accInitial">Saldo awal (Rp)</label>
-        <input class="input" id="accInitial" type="number" min="0" inputmode="numeric" value="0" />
+        <input class="input" id="accInitial" type="text" inputmode="numeric" autocomplete="off" data-money value="0" />
       </div>
       <div class="form-actions span-all-md">
         <button class="btn btn-soft btn-block" type="submit">+ Tambah rekening</button>
@@ -150,7 +150,7 @@
       </div>
       <div class="field">
         <label for="mutAmount">Nominal (Rp)</label>
-        <input class="input" id="mutAmount" type="number" min="1" inputmode="numeric" required />
+        <input class="input" id="mutAmount" type="text" inputmode="numeric" autocomplete="off" data-money required />
       </div>
       <div class="field">
         <label for="mutNote">Keterangan (opsional)</label>
@@ -196,27 +196,27 @@
       </div>
       <div class="field">
         <label for="txNominal">Nominal transaksi (Rp)</label>
-        <input class="input" id="txNominal" type="number" min="1" inputmode="numeric" required />
+        <input class="input" id="txNominal" type="text" inputmode="numeric" autocomplete="off" data-money required />
       </div>
       <div class="field">
         <label for="txAdmin">Admin / keuntungan (Rp)</label>
-        <input class="input" id="txAdmin" type="number" min="0" inputmode="numeric" value="0" />
+        <input class="input" id="txAdmin" type="text" inputmode="numeric" autocomplete="off" data-money value="0" />
       </div>
       <div class="field">
         <label for="txCashIn">Uang tunai masuk (Rp)</label>
-        <input class="input" id="txCashIn" type="number" min="0" inputmode="numeric" value="0" />
+        <input class="input" id="txCashIn" type="text" inputmode="numeric" autocomplete="off" data-money value="0" />
       </div>
       <div class="field">
         <label for="txCashOut">Uang tunai keluar (Rp)</label>
-        <input class="input" id="txCashOut" type="number" min="0" inputmode="numeric" value="0" />
+        <input class="input" id="txCashOut" type="text" inputmode="numeric" autocomplete="off" data-money value="0" />
       </div>
       <div class="field">
         <label for="txDigIn">Saldo digital masuk (Rp)</label>
-        <input class="input" id="txDigIn" type="number" min="0" inputmode="numeric" value="0" />
+        <input class="input" id="txDigIn" type="text" inputmode="numeric" autocomplete="off" data-money value="0" />
       </div>
       <div class="field">
         <label for="txDigOut">Saldo digital keluar (Rp)</label>
-        <input class="input" id="txDigOut" type="number" min="0" inputmode="numeric" value="0" />
+        <input class="input" id="txDigOut" type="text" inputmode="numeric" autocomplete="off" data-money value="0" />
       </div>
       <div class="field">
         <label for="txMethod">Metode pembayaran</label>

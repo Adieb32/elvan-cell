@@ -22,7 +22,27 @@ async function q(promise) {
   }
   return count != null && data == null ? count : data;
 }
-const n0 = (v) => Math.max(0, Math.round(Number(v) || 0));
+// Ambil angka rupiah dari isian: "500.000" / "Rp 500,000" -> 500000
+const n0 = (v) => (typeof v === 'number' ? Math.max(0, Math.round(v)) : Number(String(v ?? '').replace(/\D/g, '')) || 0);
+const fmtMoney = (n) => (Number(n) || 0).toLocaleString('id-ID');
+const setMoney = (id, n) => { $(id).value = fmtMoney(n); };
+
+// Format otomatis titik ribuan saat mengetik
+document.addEventListener('input', (e) => {
+  const el = e.target;
+  if (!el.matches || !el.matches('[data-money]')) return;
+  const digitsBefore = el.value.slice(0, el.selectionStart).replace(/\D/g, '').length;
+  const digits = el.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+  el.value = digits ? fmtMoney(Number(digits)) : '';
+  // kembalikan posisi kursor setelah format
+  let pos = 0, seen = 0;
+  while (pos < el.value.length && seen < digitsBefore) { if (/\d/.test(el.value[pos])) seen++; pos++; }
+  el.setSelectionRange(pos, pos);
+});
+
+// Saldo awal: jangan ditimpa auto-refresh selama sedang diubah & belum disimpan
+let openingDirty = false;
+['openCash', 'openDigital'].forEach((id) => $(id).addEventListener('input', () => { openingDirty = true; }));
 const TX_TYPES = ['Top up e-wallet', 'Tarik tunai', 'Transfer bank', 'Transfer e-wallet', 'Pulsa', 'Paket data',
   'Token listrik', 'Bayar tagihan', 'Voucher game', 'Aksesori HP', 'Jasa / lainnya'];
 
@@ -106,8 +126,7 @@ function render() {
   $('stAdmin').textContent = rp(s.admin);
   $('stCashDiff').textContent = (s.cashDiff < 0 ? '-' : '') + rp(Math.abs(s.cashDiff));
   $('stCashDiff').className = s.cashDiff < 0 ? 'text-red' : 'text-green';
-  if (document.activeElement !== $('openCash')) $('openCash').value = state.opening.cash;
-  if (document.activeElement !== $('openDigital')) $('openDigital').value = state.opening.digital;
+  if (!openingDirty) { setMoney('openCash', state.opening.cash); setMoney('openDigital', state.opening.digital); }
   $('estCash').textContent = rp(s.estCash);
   $('estDigital').textContent = rp(s.estDigital);
   $('txDateLabel').textContent = fmtDate(state.date);
@@ -162,11 +181,13 @@ const isAdmin = () => state.user?.role === 'admin';
 // ---------- EVENTS ----------
 $('date').addEventListener('change', wrap(async () => {
   state.date = $('date').value || todayStr();
+  openingDirty = false;
   $('txDatetime').value = `${state.date}T${nowTime()}`;
   await loadAll();
 }));
 $('btnToday').addEventListener('click', wrap(async () => {
   state.date = todayStr(); $('date').value = state.date;
+  openingDirty = false;
   $('txDatetime').value = `${state.date}T${nowTime()}`;
   await loadAll();
 }));
@@ -177,15 +198,21 @@ $('btnSaveCounter').addEventListener('click', wrap(async () => {
 }));
 
 $('openingForm').addEventListener('submit', wrap(async () => {
-  await DB.saveOpening(state.date, $('openCash').value, $('openDigital').value);
-  await loadAll(); toast('Saldo awal disimpan');
+  const cash = n0($('openCash').value), digital = n0($('openDigital').value);
+  await DB.saveOpening(state.date, cash, digital);
+  // Pastikan benar-benar tersimpan di database
+  const saved = await DB.opening(state.date);
+  if (saved.cash !== cash || saved.digital !== digital) throw new Error('Saldo awal gagal tersimpan, coba lagi');
+  openingDirty = false;
+  await loadAll();
+  toast(`Saldo awal ${fmtDate(state.date)} disimpan: tunai ${rp(cash)}, digital ${rp(digital)}`);
 }));
 
 $('accForm').addEventListener('submit', wrap(async () => {
   const name = $('accName').value.trim().slice(0, 100);
   if (!name) throw new Error('Nama rekening wajib diisi');
   await q(supa.from('accounts').insert({ name, initial_balance: n0($('accInitial').value) }));
-  $('accForm').reset(); $('accInitial').value = 0;
+  $('accForm').reset(); setMoney('accInitial', 0);
   await loadAll(); toast('Rekening ditambahkan');
 }));
 
@@ -210,8 +237,8 @@ $('mutForm').addEventListener('submit', wrap(async () => {
 
 // Isi otomatis arus uang berdasarkan jenis transaksi
 $('btnAutoFill').addEventListener('click', () => {
-  const n = Number($('txNominal').value) || 0, a = Number($('txAdmin').value) || 0, type = $('txType').value;
-  const set = (ci, co, di, dout) => { $('txCashIn').value = ci; $('txCashOut').value = co; $('txDigIn').value = di; $('txDigOut').value = dout; };
+  const n = n0($('txNominal').value), a = n0($('txAdmin').value), type = $('txType').value;
+  const set = (ci, co, di, dout) => { setMoney('txCashIn', ci); setMoney('txCashOut', co); setMoney('txDigIn', di); setMoney('txDigOut', dout); };
   if (!n) return toast('Isi nominal transaksi dulu', true);
   if (type === 'Tarik tunai') set(0, n, n + a, 0);
   else if (type === 'Aksesori HP' || type === 'Jasa / lainnya') set(n + a, 0, 0, 0);
@@ -231,7 +258,7 @@ $('txForm').addEventListener('submit', wrap(async () => {
     method: $('txMethod').value, note: $('txNote').value.trim().slice(0, 200), created_by: state.user.username,
   }));
   ['txNominal', 'txNote'].forEach((id) => ($(id).value = ''));
-  ['txAdmin', 'txCashIn', 'txCashOut', 'txDigIn', 'txDigOut'].forEach((id) => ($(id).value = 0));
+  ['txAdmin', 'txCashIn', 'txCashOut', 'txDigIn', 'txDigOut'].forEach((id) => setMoney(id, 0));
   const d = $('txDatetime').value.slice(0, 10);
   $('txDatetime').value = `${state.date}T${nowTime()}`;
   if (d !== state.date) { state.date = d; $('date').value = d; }
