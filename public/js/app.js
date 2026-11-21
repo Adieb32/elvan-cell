@@ -17,7 +17,7 @@ const state = { user: null, date: todayStr(), counter: 'Elvan Cell', opening: { 
 async function q(promise) {
   const { data, error, count } = await promise;
   if (error) {
-    if (error.status === 401 || /JWT/i.test(error.message)) { location.replace('index.html'); throw new Error('Belum login'); }
+    if (error.status === 401 || /JWT/i.test(error.message)) { logout(); throw new Error('Belum login'); }
     throw new Error(supaError(error));
   }
   return count != null && data == null ? count : data;
@@ -41,8 +41,14 @@ document.addEventListener('input', (e) => {
 });
 
 // Saldo awal: jangan ditimpa auto-refresh selama sedang diubah & belum disimpan
+// Saldo awal: kotak isian hanya untuk mengetik angka baru.
+// Kosong = pakai nilai yang sudah tersimpan. Setelah disimpan, kotak dikosongkan lagi.
 let openingDirty = false;
-['openCash', 'openDigital'].forEach((id) => $(id).addEventListener('input', () => { openingDirty = true; updateEstimates(); }));
+const clearOpeningInputs = () => { $('openCash').value = ''; $('openDigital').value = ''; openingDirty = false; };
+['openCash', 'openDigital'].forEach((id) => $(id).addEventListener('input', () => {
+  openingDirty = $('openCash').value !== '' || $('openDigital').value !== '';
+  updateEstimates();
+}));
 const TX_TYPES = ['Top up e-wallet', 'Tarik tunai', 'Transfer bank', 'Transfer e-wallet', 'Pulsa', 'Paket data',
   'Token listrik', 'Bayar tagihan', 'Voucher game', 'Aksesori HP', 'Jasa / lainnya'];
 
@@ -75,9 +81,8 @@ async function getProfile() {
   const rows = await q(supa.from('profiles').select('*').eq('id', data.session.user.id));
   const p = rows[0];
   if (!p || p.role === 'none') {
-    await supa.auth.signOut();
     alert('Akun ini belum diaktifkan oleh admin.');
-    location.replace('index.html');
+    await logout();
     throw new Error('Belum login');
   }
   return p;
@@ -129,11 +134,12 @@ function summary() {
 
 // Perkiraan akhir langsung mengikuti angka yang sedang diketik (sebelum disimpan)
 function updateEstimates(s = summary()) {
-  const cash = openingDirty ? n0($('openCash').value) : state.opening.cash;
-  const digital = openingDirty ? n0($('openDigital').value) : state.opening.digital;
+  const cash = $('openCash').value !== '' ? n0($('openCash').value) : state.opening.cash;
+  const digital = $('openDigital').value !== '' ? n0($('openDigital').value) : state.opening.digital;
   $('estCash').textContent = rp(cash + s.cashDiff);
   $('estDigital').textContent = rp(digital + s.digIn - s.digOut);
-  $('openingStatus').textContent = openingDirty ? '● Belum disimpan' : '';
+  $('openingStatus').textContent = openingDirty ? '● Belum disimpan — tekan Simpan saldo awal' : '';
+  $('openingSaved').textContent = `Tersimpan untuk tanggal ini: tunai ${rp(state.opening.cash)} · digital ${rp(state.opening.digital)}`;
 }
 
 function render() {
@@ -144,7 +150,8 @@ function render() {
   $('stAdmin').textContent = rp(s.admin);
   $('stCashDiff').textContent = (s.cashDiff < 0 ? '-' : '') + rp(Math.abs(s.cashDiff));
   $('stCashDiff').className = s.cashDiff < 0 ? 'text-red' : 'text-green';
-  if (!openingDirty) { setMoney('openCash', state.opening.cash); setMoney('openDigital', state.opening.digital); }
+  $('openCash').placeholder = 'Tersimpan: ' + fmtMoney(state.opening.cash);
+  $('openDigital').placeholder = 'Tersimpan: ' + fmtMoney(state.opening.digital);
   updateEstimates(s);
   $('txDateLabel').textContent = fmtDate(state.date);
 
@@ -198,13 +205,13 @@ const isAdmin = () => state.user?.role === 'admin';
 // ---------- EVENTS ----------
 $('date').addEventListener('change', wrap(async () => {
   state.date = $('date').value || todayStr();
-  openingDirty = false;
+  clearOpeningInputs();
   $('txDatetime').value = `${state.date}T${nowTime()}`;
   await loadAll();
 }));
 $('btnToday').addEventListener('click', wrap(async () => {
   state.date = todayStr(); $('date').value = state.date;
-  openingDirty = false;
+  clearOpeningInputs();
   $('txDatetime').value = `${state.date}T${nowTime()}`;
   await loadAll();
 }));
@@ -215,12 +222,15 @@ $('btnSaveCounter').addEventListener('click', wrap(async () => {
 }));
 
 $('openingForm').addEventListener('submit', wrap(async () => {
-  const cash = n0($('openCash').value), digital = n0($('openDigital').value);
+  if (!openingDirty) throw new Error('Ketik saldo awal dulu sebelum menyimpan');
+  // Kotak yang dikosongkan tetap memakai nilai yang sudah tersimpan
+  const cash = $('openCash').value !== '' ? n0($('openCash').value) : state.opening.cash;
+  const digital = $('openDigital').value !== '' ? n0($('openDigital').value) : state.opening.digital;
   await DB.saveOpening(state.date, cash, digital);
   // Pastikan benar-benar tersimpan di database
   const saved = await DB.opening(state.date);
   if (saved.cash !== cash || saved.digital !== digital) throw new Error('Saldo awal gagal tersimpan, coba lagi');
-  openingDirty = false;
+  clearOpeningInputs();
   await loadAll();
   toast(`Saldo awal ${fmtDate(state.date)} disimpan: tunai ${rp(cash)}, digital ${rp(digital)}`);
 }));
@@ -368,7 +378,7 @@ $('passForm').addEventListener('submit', wrap(async () => {
 }));
 
 // Logout
-$('btnLogout').addEventListener('click', wrap(async () => { await supa.auth.signOut(); location.replace('index.html'); }));
+$('btnLogout').addEventListener('click', () => { $('btnLogout').textContent = 'Keluar...'; logout(); });
 
 // Backup & import
 function downloadBlob(blob, filename) {

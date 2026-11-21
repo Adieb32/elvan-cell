@@ -5,7 +5,7 @@
   <meta http-equiv="Cache-Control" content="no-cache" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Elvan Cell | Rekap Transaksi</title>
-  <link rel="stylesheet" href="css/style.css?v=2.4" />
+  <link rel="stylesheet" href="css/style.css?v=2.5" />
 </head>
 <body>
 <div class="container">
@@ -82,17 +82,18 @@
     <form id="openingForm" class="grid grid-3">
       <div class="field">
         <label for="openCash">Kas tunai awal (Rp)</label>
-        <input class="input" id="openCash" type="text" inputmode="numeric" autocomplete="off" data-money value="0" />
+        <input class="input" id="openCash" type="text" inputmode="numeric" autocomplete="off" data-money />
       </div>
       <div class="field">
         <label for="openDigital">Saldo digital awal (Rp)</label>
-        <input class="input" id="openDigital" type="text" inputmode="numeric" autocomplete="off" data-money value="0" />
+        <input class="input" id="openDigital" type="text" inputmode="numeric" autocomplete="off" data-money />
       </div>
       <div class="form-actions span-all-md">
         <button class="btn btn-soft btn-block" type="submit">Simpan saldo awal</button>
       </div>
     </form>
-    <p id="openingStatus" class="text-red" style="font-size:13px;font-weight:600;margin-top:6px"></p>
+    <p id="openingSaved" style="font-size:13px;color:var(--muted);margin-top:8px"></p>
+    <p id="openingStatus" class="text-red" style="font-size:13px;font-weight:600;margin-top:4px"></p>
     <div class="grid grid-2" style="margin-top:12px">
       <div class="stat inner"><span>Perkiraan kas tunai akhir</span><strong id="estCash">Rp0</strong></div>
       <div class="stat inner"><span>Perkiraan saldo digital akhir</span><strong id="estDigital">Rp0</strong></div>
@@ -258,7 +259,7 @@
     </div>
   </section>
 
-  <p class="hint">Catatan: Data disimpan di database server, sehingga bisa dibuka dari HP, tablet, dan laptop lain secara bersamaan. Jangan catat PIN, password, atau data rahasia pelanggan. <b>Versi 2.4</b></p>
+  <p class="hint">Catatan: Data disimpan di database server, sehingga bisa dibuka dari HP, tablet, dan laptop lain secara bersamaan. Jangan catat PIN, password, atau data rahasia pelanggan. <b>Versi 2.5</b></p>
 </div>
 
 <!-- ===== MODAL: USERS ===== -->
@@ -299,8 +300,8 @@
 <script src="vendor/xlsx.full.min.js"></script>
 <script src="vendor/html2canvas.min.js"></script>
 <script src="vendor/supabase.js"></script>
-<script src="js/config.js?v=2.4"></script>
-<script src="js/supa.js?v=2.4"></script>
-<script src="js/app.js?v=2.4"></script>
+<script src="js/config.js?v=2.5"></script>
+<script src="js/supa.js?v=2.5"></script>
+<script src="js/app.js?v=2.5"></script>
 </body>
 </html>
