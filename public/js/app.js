@@ -88,12 +88,20 @@ function toast(msg, isError = false) {
   t.textContent = msg;
   t.className = 'show' + (isError ? ' error' : '');
   clearTimeout(t._h);
-  t._h = setTimeout(() => (t.className = ''), 2600);
+  t._h = setTimeout(() => (t.className = ''), isError ? 7000 : 3000);
 }
+// Jalankan aksi: tombol jadi "Menyimpan..." selama proses, error selalu ditampilkan
 const wrap = (fn) => async (e) => {
   e?.preventDefault?.();
-  try { await fn(e); } catch (err) { if (err.message !== 'Belum login') toast(err.message, true); }
+  const btn = e?.type === 'submit' ? e.target.querySelector('button[type="submit"]') : null;
+  const label = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan...'; }
+  try { await fn(e); } catch (err) { if (err.message !== 'Belum login') toast(err.message || String(err), true); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = label; } }
 };
+// Error tak terduga juga ditampilkan, jangan diam saja
+window.addEventListener('error', (e) => toast('Error: ' + (e.message || 'tidak diketahui'), true));
+window.addEventListener('unhandledrejection', (e) => toast('Error: ' + ((e.reason && e.reason.message) || e.reason), true));
 
 // ---------- LOAD ----------
 async function loadAll() {
