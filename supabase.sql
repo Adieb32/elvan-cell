@@ -137,6 +137,17 @@ create policy p_acc_admin on public.accounts for update to authenticated using (
 drop policy if exists p_acc_delete on public.accounts;
 create policy p_acc_delete on public.accounts for delete to authenticated using (public.is_admin());
 
+-- ---------- AKSES API ----------
+-- Izinkan akses lewat Data API untuk pengguna yang sudah login.
+-- (Siapa boleh melihat/mengubah apa tetap dibatasi oleh policy RLS di atas.)
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on
+  public.profiles, public.settings, public.daily_opening, public.transactions, public.accounts, public.mutations
+  to authenticated;
+grant select on public.account_balances to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
+grant execute on function public.my_role(), public.my_username(), public.is_staff(), public.is_admin() to authenticated;
+
 -- ---------- FUNGSI ADMIN ----------
 -- Hapus semua transaksi pada satu tanggal (khusus admin)
 create or replace function public.clear_day(p_date text) returns integer
@@ -174,3 +185,5 @@ begin
   perform setval(pg_get_serial_sequence('public.mutations', 'id'), coalesce((select max(id) from public.mutations), 0) + 1, false);
   perform setval(pg_get_serial_sequence('public.accounts', 'id'), coalesce((select max(id) from public.accounts), 0) + 1, false);
 end $$;
+
+grant execute on function public.clear_day(text), public.restore_backup(jsonb) to authenticated;
