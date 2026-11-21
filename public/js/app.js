@@ -92,7 +92,8 @@ function toast(msg, isError = false) {
 }
 // Jalankan aksi: tombol jadi "Menyimpan..." selama proses, error selalu ditampilkan
 const wrap = (fn) => async (e) => {
-  e?.preventDefault?.();
+  // Hanya batalkan kirim-form bawaan browser; klik biasa jangan dibatalkan
+  if (e?.type === 'submit') e.preventDefault();
   const btn = e?.type === 'submit' ? e.target.querySelector('button[type="submit"]') : null;
   const label = btn?.textContent;
   if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan...'; }
